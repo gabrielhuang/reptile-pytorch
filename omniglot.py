@@ -9,46 +9,53 @@ from torchvision.datasets.utils import check_integrity, list_dir, list_files
 # https://github.com/brendenlake/omniglot/blob/master/python/images_evaluation.zip
 
 
-def read_image(path):
-    return Image.open(path, mode='r').convert('L')
+def read_image(path, size=None):
+    img = Image.open(path, mode='r').convert('L')
+    if size is not None:
+        img = img.resize(size)
+    return img
 
 
 class ImageCache(object):
     def __init__(self):
         self.cache = {}
 
-    def read_image(self, path):
-        if path not in self.cache:
-            self.cache[path] = read_image(path)
+    def read_image(self, path, size=None):
+        key = (path, size)
+        if key not in self.cache:
+            self.cache[key] = read_image(path, size)
         else:
-            pass  # print 'reusing cache', path
-        return self.cache[path]
+            pass  #print 'reusing cache', key
+        return self.cache[key]
 
 
 class FewShot(data.Dataset):
     '''
     Dataset for K-shot N-way classification
     '''
-    def __init__(self, paths, meta=None, cache=None):
-        if cache is None:
-            self.cache = ImageCache()
+    def __init__(self, paths, meta=None, parent=None):
         self.paths = paths
         self.meta = {} if meta is None else meta
+        self.parent = parent
 
     def __len__(self):
         return len(self.paths)
 
     def __getitem__(self, idx):
         path = self.paths[idx]['path']
-        image = self.cache.read_image(path)
+        if self.parent.cache is None:
+            image = read_image(path, self.parent.size)
+        else:
+            image = self.parent.cache.read_image(path, self.parent.size)
         return image, self.paths[idx]
 
 
 class AbstractMetaOmniglot(object):
 
-    def __init__(self, characters_list, cache=None):
+    def __init__(self, characters_list, cache=None, size=(28, 28)):
         self.characters_list = characters_list
         self.cache = cache
+        self.size = size
 
     def __len__(self):
         return len(self.characters_list)
@@ -68,13 +75,14 @@ class AbstractMetaOmniglot(object):
                 all_samples.append(new_path)
         base_task = FewShot(all_samples,
                             meta={'characters': character_indices},
-                            cache=self.cache)
+                            parent=self
+                            )
         return base_task
 
 
 class MetaOmniglotFolder(AbstractMetaOmniglot):
 
-    def __init__(self, root='omniglot'):
+    def __init__(self, root='omniglot', cache=None, size=(28, 28)):
         '''
         :param root: folder containing alphabets for background and evaluation set
         '''
@@ -92,7 +100,7 @@ class MetaOmniglotFolder(AbstractMetaOmniglot):
                         'character_idx': character_idx
                     })
         characters_list = np.asarray(self._characters.items())
-        AbstractMetaOmniglot.__init__(self, characters_list)
+        AbstractMetaOmniglot.__init__(self, characters_list, cache, size)
 
 
 class MetaOmniglotSplit(AbstractMetaOmniglot):
@@ -106,13 +114,13 @@ def split_omniglot(meta_omniglot, validation=0.1):
     np.random.shuffle(indices)
     train_characters = meta_omniglot[indices[:-n_val]]
     test_characters = meta_omniglot[indices[-n_val:]]
-    train = MetaOmniglotSplit(train_characters, cache=meta_omniglot.cache)
-    test = MetaOmniglotSplit(test_characters, cache=meta_omniglot.cache)
+    train = MetaOmniglotSplit(train_characters, cache=meta_omniglot.cache, size=meta_omniglot.size)
+    test = MetaOmniglotSplit(test_characters, cache=meta_omniglot.cache, size=meta_omniglot.size)
     return train, test
 
 
 
-meta_omniglot = MetaOmniglotFolder()
+meta_omniglot = MetaOmniglotFolder('omniglot', size=(64, 64), cache=ImageCache())
 
 train, test = split_omniglot(meta_omniglot)
 print 'all', len(meta_omniglot)
