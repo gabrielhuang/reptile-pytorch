@@ -13,11 +13,25 @@ def read_image(path):
     return Image.open(path, mode='r').convert('L')
 
 
+class ImageCache(object):
+    def __init__(self):
+        self.cache = {}
+
+    def read_image(self, path):
+        if path not in self.cache:
+            self.cache[path] = read_image(path)
+        else:
+            pass  # print 'reusing cache', path
+        return self.cache[path]
+
+
 class FewShot(data.Dataset):
     '''
     Dataset for K-shot N-way classification
     '''
-    def __init__(self, paths, meta=None):
+    def __init__(self, paths, meta=None, cache=None):
+        if cache is None:
+            self.cache = ImageCache()
         self.paths = paths
         self.meta = {} if meta is None else meta
 
@@ -26,14 +40,15 @@ class FewShot(data.Dataset):
 
     def __getitem__(self, idx):
         path = self.paths[idx]['path']
-        image = read_image(path)
+        image = self.cache.read_image(path)
         return image, self.paths[idx]
 
 
 class AbstractMetaOmniglot(object):
 
-    def __init__(self, characters_list):
+    def __init__(self, characters_list, cache=None):
         self.characters_list = characters_list
+        self.cache = cache
 
     def __len__(self):
         return len(self.characters_list)
@@ -51,7 +66,9 @@ class AbstractMetaOmniglot(object):
                 new_path.update(path)
                 new_path['base_idx'] = base_idx
                 all_samples.append(new_path)
-        base_task = FewShot(all_samples, meta={'characters': character_indices})
+        base_task = FewShot(all_samples,
+                            meta={'characters': character_indices},
+                            cache=self.cache)
         return base_task
 
 
@@ -89,8 +106,8 @@ def split_omniglot(meta_omniglot, validation=0.1):
     np.random.shuffle(indices)
     train_characters = meta_omniglot[indices[:-n_val]]
     test_characters = meta_omniglot[indices[-n_val:]]
-    train = MetaOmniglotSplit(train_characters)
-    test = MetaOmniglotSplit(test_characters)
+    train = MetaOmniglotSplit(train_characters, cache=meta_omniglot.cache)
+    test = MetaOmniglotSplit(test_characters, cache=meta_omniglot.cache)
     return train, test
 
 
@@ -104,5 +121,6 @@ print 'test', len(test)
 
 base_task = train.get_random_task()
 print 'base_task', len(base_task)
-print base_task[0]
+print 'ask once', base_task[0]
+print 'ask twice', base_task[0]
 
