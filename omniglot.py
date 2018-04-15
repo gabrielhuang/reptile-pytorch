@@ -2,7 +2,7 @@ from torch.utils import data
 import os
 import numpy as np
 from PIL import Image
-from torchvision.datasets.utils import check_integrity, list_dir, list_files
+from torchvision.datasets.utils import list_dir, list_files
 
 # Might need to manually download, extract, and merge
 # https://github.com/brendenlake/omniglot/blob/master/python/images_background.zip
@@ -64,20 +64,32 @@ class AbstractMetaOmniglot(object):
         return self.characters_list[idx]
 
     def get_random_task(self, N=5, K=1):
-        all_samples = []
+        train_task, __ = self.get_random_task_split(N, train_K=K, test_K=0)
+        return train_task
+
+    def get_random_task_split(self, N=5, train_K=1, test_K=1):
+        train_samples = []
+        test_samples = []
         character_indices = np.random.choice(len(self), N, replace=False)
         for base_idx, idx in enumerate(character_indices):
             character, paths = self.characters_list[idx]
-            for path in np.random.choice(paths, K, replace=False):
+            for i, path in enumerate(np.random.choice(paths, train_K + test_K, replace=False)):
                 new_path = {}
                 new_path.update(path)
                 new_path['base_idx'] = base_idx
-                all_samples.append(new_path)
-        base_task = FewShot(all_samples,
-                            meta={'characters': character_indices},
+                if i > train_K:
+                    train_samples.append(new_path)
+                else:
+                    test_samples.append(new_path)
+        train_task = FewShot(train_samples,
+                            meta={'characters': character_indices, 'split': 'train'},
                             parent=self
                             )
-        return base_task
+        test_task = FewShot(test_samples,
+                             meta={'characters': character_indices, 'split': 'test'},
+                             parent=self
+                             )
+        return train_task, test_task
 
 
 class MetaOmniglotFolder(AbstractMetaOmniglot):
@@ -109,6 +121,9 @@ class MetaOmniglotSplit(AbstractMetaOmniglot):
 
 
 def split_omniglot(meta_omniglot, validation=0.1):
+    '''
+    Split meta-omniglot into two meta-datasets of tasks (disjoint characters)
+    '''
     n_val = int(validation * len(meta_omniglot))
     indices = np.arange(len(meta_omniglot))
     np.random.shuffle(indices)
@@ -117,7 +132,6 @@ def split_omniglot(meta_omniglot, validation=0.1):
     train = MetaOmniglotSplit(train_characters, cache=meta_omniglot.cache, size=meta_omniglot.size)
     test = MetaOmniglotSplit(test_characters, cache=meta_omniglot.cache, size=meta_omniglot.size)
     return train, test
-
 
 
 meta_omniglot = MetaOmniglotFolder('omniglot', size=(64, 64), cache=ImageCache())
