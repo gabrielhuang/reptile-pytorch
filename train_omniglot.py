@@ -127,7 +127,6 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Clone model
     net = meta_net.clone()
-    #optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
     optimizer = torch.optim.SGD(net.parameters(), lr=args.lr)
     # load state of base optimizer?
 
