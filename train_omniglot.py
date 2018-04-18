@@ -42,8 +42,8 @@ parser.add_argument('--train-shots', default=15, type=int, help='train shots')
 parser.add_argument('--meta-iterations', default=100000, type=int, help='number of meta iterations')
 parser.add_argument('--iterations', default=3, type=int, help='number of base iterations')
 parser.add_argument('--test-iterations', default=5, type=int, help='number of base iterations')
-parser.add_argument('--batch', default=25, type=int, help='minibatch size in base task')
-parser.add_argument('--meta-lr', default=0.1, type=float, help='meta learning rate')
+parser.add_argument('--batch', default=5, type=int, help='minibatch size in base task')
+parser.add_argument('--meta-lr', default=0.8, type=float, help='meta learning rate')
 parser.add_argument('--lr', default=1e-3, type=float, help='base learning rate')
 
 # - General params
@@ -124,8 +124,10 @@ def do_evaluation(net, test_iter, iterations):
     return np.mean(losses), np.mean(accuracies)
 
 
-def get_optimizer(net):
+def get_optimizer(net, state=None):
     optimizer = torch.optim.Adam(net.parameters(), lr=args.lr, betas=(0, 0.999))
+    if state is not None:
+        optimizer.load_state_dict(state)
     return optimizer
 
 
@@ -133,11 +135,12 @@ def get_optimizer(net):
 meta_optimizer = torch.optim.SGD(meta_net.parameters(), lr=args.meta_lr)
 #meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.meta_lr)
 info = {}
+state = None
 for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Clone model
     net = meta_net.clone()
-    optimizer = get_optimizer(net)
+    optimizer = get_optimizer(net, state)
     # load state of base optimizer?
 
     # Sample base task from Meta-Train
@@ -146,6 +149,7 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Update fast net
     loss = do_learning(net, optimizer, train_iter, args.iterations)
+    state = optimizer.state_dict()  # save optimizer state
 
     # Update slow net
     meta_net.point_grad_to(net)
@@ -161,7 +165,7 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
             # Base-train
             net = meta_net.clone()
-            optimizer = get_optimizer(net)
+            optimizer = get_optimizer(net, state)
             loss = do_learning(net, optimizer, train_iter, args.test_iterations)
 
             # Base-test: compute meta-loss, which is base-validation error
