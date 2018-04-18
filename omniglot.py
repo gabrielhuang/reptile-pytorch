@@ -77,7 +77,7 @@ class AbstractMetaOmniglot(object):
                 new_path = {}
                 new_path.update(path)
                 new_path['base_idx'] = base_idx
-                if i > train_K:
+                if i < train_K:
                     train_samples.append(new_path)
                 else:
                     test_samples.append(new_path)
@@ -134,15 +134,16 @@ def split_omniglot(meta_omniglot, validation=0.1):
     return train, test
 
 
-meta_omniglot = MetaOmniglotFolder('omniglot', size=(64, 64), cache=ImageCache())
+if __name__ == '__main__':
+    meta_omniglot = MetaOmniglotFolder('omniglot', size=(64, 64), cache=ImageCache())
 
-train, test = split_omniglot(meta_omniglot)
-print 'all', len(meta_omniglot)
-print 'train', len(train)
-print 'test', len(test)
+    train, test = split_omniglot(meta_omniglot)
+    print 'all', len(meta_omniglot)
+    print 'train', len(train)
+    print 'test', len(test)
 
-base_task = train.get_random_task()
-print 'base_task', len(base_task)
-print 'ask once', base_task[0]
-print 'ask twice', base_task[0]
+    base_task = train.get_random_task()
+    print 'base_task', len(base_task)
+    print 'ask once', base_task[0]
+    print 'ask twice', base_task[0]
 
