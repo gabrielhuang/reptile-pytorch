@@ -41,6 +41,8 @@ parser.add_argument('--shots', default=1, type=int, help='shots per class (K-sho
 parser.add_argument('--meta-iterations', default=400000, type=int, help='number of meta iterations')
 parser.add_argument('--iterations', default=3, type=int, help='number of base iterations')
 parser.add_argument('--batch', default=8, type=int, help='minibatch size in base task')
+parser.add_argument('--meta-lr', default=1e-3, type=float, help='meta learning rate')
+parser.add_argument('--lr', default=1e-2, type=float, help='base learning rate')
 
 # - General params
 parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
@@ -119,13 +121,14 @@ def do_evaluation(net, test_iter, iterations):
 
 
 # Main loop
-meta_optimizer = torch.optim.Adam(meta_net.parameters())
+meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.meta_lr)
 info = {}
 for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Clone model
     net = meta_net.clone()
-    optimizer = torch.optim.Adam(net.parameters())
+    #optimizer = torch.optim.Adam(net.parameters(), lr=args.lr)
+    optimizer = torch.optim.SGD(net.parameters(), lr=args.lr)
     # load state of base optimizer?
 
     # Sample base task from Meta-Train
