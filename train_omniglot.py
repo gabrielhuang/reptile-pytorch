@@ -39,8 +39,8 @@ parser = argparse.ArgumentParser('Train reptile on omniglot')
 parser.add_argument('--classes', default=5, type=int, help='classes in base-task (N-way)')
 parser.add_argument('--shots', default=1, type=int, help='shots per class (K-shot)')
 parser.add_argument('--meta-iterations', default=400000, type=int, help='number of meta iterations')
-parser.add_argument('--base-iterations', default=400000, type=int, help='number of meta iterations')
-parser.add_argument('--base-batch', default=8, type=int, help='minibatch size in base task')
+parser.add_argument('--iterations', default=3, type=int, help='number of base iterations')
+parser.add_argument('--batch', default=8, type=int, help='minibatch size in base task')
 
 # - General params
 parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
@@ -72,35 +72,35 @@ def get_loss(prediction, labels):
     return cross_entropy(prediction, labels)
 
 
-def do_base_learning(base_net, base_optimizer, base_iter, base_iterations):
+def do_learning(net, optimizer, train_iter, iterations):
 
-    for base_iteration in xrange(base_iterations):
+    for iteration in xrange(iterations):
         # Sample minibatch
-        data, labels = Variable_(base_iter.next())
+        data, labels = Variable_(train_iter.next())
 
         # Forward pass
-        prediction = base_net(data)
+        prediction = net(data)
 
         # Get loss
         loss = get_loss(prediction, labels)
 
         # Backward pass - Update fast net
-        base_optimizer.zero_grad()
+        optimizer.zero_grad()
         loss.backward()
-        base_optimizer.step()
+        optimizer.step()
 
     return loss.data[0]
 
 
-def do_base_evaluation(base_net, base_iter, base_iterations):
+def do_evaluation(net, test_iter, iterations):
 
     losses = []
-    for base_iteration in xrange(base_iterations):
+    for iteration in xrange(iterations):
         # Sample minibatch
-        data, labels = Variable_(base_iter.next())
+        data, labels = Variable_(test_iter.next())
 
         # Forward pass
-        prediction = base_net(data)
+        prediction = net(data)
 
         # Get loss
         loss = get_loss(prediction, labels)
@@ -115,34 +115,34 @@ meta_optimizer = torch.optim.Adam(meta_net.parameters())
 for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Clone model
-    base_net = meta_net.clone()
-    base_optimizer = torch.optim.Adam(base_net.parameters())
+    net = meta_net.clone()
+    optimizer = torch.optim.Adam(net.parameters())
     # load state of base optimizer?
 
     # Sample base task
-    base_task = train_dataset.get_random_task(args.classes, args.shots)
-    base_iter = make_infinite(DataLoader(base_task, args.base_batch, shuffle=True))
+    train = train_dataset.get_random_task(args.classes, args.shots)
+    train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True))
 
     # Update fast net
-    loss = do_base_learning(base_net, base_optimizer, base_iter, args.base_iterations)
+    loss = do_learning(net, optimizer, train, args.iterations)
 
     # Update slow net
-    meta_net.point_grad_to(base_net)
+    meta_net.point_grad_to(net)
     meta_optimizer.step()
 
     # Meta-Evaluation
     if meta_iteration % args.validate_every == 0:
         for (meta_dataset, mode) in [(train_dataset, 'train'), (test_dataset, 'val')]:
 
-            base_train_task, base_test_task = meta_dataset.get_random_task_split(args.classes, train_K=args.shots, test_K=1)
-            base_train_iter = make_infinite(DataLoader(base_train_task, args.base_batch, shuffle=True))
-            base_test_iter = make_infinite(DataLoader(base_train_task, args.base_batch, shuffle=True))
+            train, test = meta_dataset.get_random_task_split(args.classes, train_K=args.shots, test_K=1)
+            train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True))
+            test_iter = make_infinite(DataLoader(test, args.batch, shuffle=True))
 
             # Base-train
-            base_net = meta_net.clone()
-            loss = do_base_learning(base_net, base_optimizer, base_train_iter, args.base_iterations)
+            net = meta_net.clone()
+            loss = do_learning(net, optimizer, train_iter, args.iterations)
 
             # Base-test: compute meta-loss, which is base-validation error
-            meta_loss = do_base_evaluation(base_net, base_test_iter)
+            meta_loss = do_evaluation(net, test_iter)
 
             print '{} metaloss', meta_loss
