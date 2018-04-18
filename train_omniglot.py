@@ -44,7 +44,7 @@ parser.add_argument('--batch', default=8, type=int, help='minibatch size in base
 
 # - General params
 parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
-parser.add_argument('--validate-every', default=10, type=int, help='Meta-evaluation every ... base-tasks')
+parser.add_argument('--validate-every', default=100, type=int, help='Meta-evaluation every ... base-tasks')
 parser.add_argument('--input', default='omniglot', help='Path to omniglot dataset')
 parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
@@ -55,11 +55,11 @@ args = parser.parse_args()
 omniglot = MetaOmniglotFolder(args.input, size=(28, 28), cache=ImageCache(),
                               transform_image=transform_image,
                               transform_label=transform_label)
-train_dataset, test_dataset = split_omniglot(omniglot, args.validation)
+meta_train, meta_test = split_omniglot(omniglot, args.validation)
 
 
-print 'Meta-Train characters', len(train_dataset)
-print 'Meta-Test characters', len(test_dataset)
+print 'Meta-Train characters', len(meta_train)
+print 'Meta-Test characters', len(meta_test)
 
 # Load model
 meta_net = OmniglotModel(args.classes)
@@ -74,6 +74,7 @@ def get_loss(prediction, labels):
 
 def do_learning(net, optimizer, train_iter, iterations):
 
+    net.train()
     for iteration in xrange(iterations):
         # Sample minibatch
         data, labels = Variable_(train_iter.next())
@@ -95,6 +96,8 @@ def do_learning(net, optimizer, train_iter, iterations):
 def do_evaluation(net, test_iter, iterations):
 
     losses = []
+    accuracies = []
+    net.eval()
     for iteration in xrange(iterations):
         # Sample minibatch
         data, labels = Variable_(test_iter.next())
@@ -105,13 +108,19 @@ def do_evaluation(net, test_iter, iterations):
         # Get loss
         loss = get_loss(prediction, labels)
 
-        losses.append(loss.data[0])
+        # Get accuracy
+        argmax = net.predict(prediction)
+        accuracy = (argmax==labels).float().mean()
 
-    return np.mean(losses)
+        losses.append(loss.data[0])
+        accuracies.append(accuracy.data[0])
+
+    return np.mean(losses), np.mean(accuracies)
 
 
 # Main loop
 meta_optimizer = torch.optim.Adam(meta_net.parameters())
+info = {}
 for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Clone model
@@ -119,12 +128,12 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
     optimizer = torch.optim.Adam(net.parameters())
     # load state of base optimizer?
 
-    # Sample base task
-    train = train_dataset.get_random_task(args.classes, args.shots)
+    # Sample base task from Meta-Train
+    train = meta_train.get_random_task(args.classes, args.shots)
     train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True))
 
     # Update fast net
-    loss = do_learning(net, optimizer, train, args.iterations)
+    loss = do_learning(net, optimizer, train_iter, args.iterations)
 
     # Update slow net
     meta_net.point_grad_to(net)
@@ -132,7 +141,7 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Meta-Evaluation
     if meta_iteration % args.validate_every == 0:
-        for (meta_dataset, mode) in [(train_dataset, 'train'), (test_dataset, 'val')]:
+        for (meta_dataset, mode) in [(meta_train, 'train'), (meta_test, 'val')]:
 
             train, test = meta_dataset.get_random_task_split(args.classes, train_K=args.shots, test_K=1)
             train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True))
@@ -143,6 +152,17 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
             loss = do_learning(net, optimizer, train_iter, args.iterations)
 
             # Base-test: compute meta-loss, which is base-validation error
-            meta_loss = do_evaluation(net, test_iter)
+            meta_loss, meta_accuracy = do_evaluation(net, test_iter, args.iterations)
 
-            print '{} metaloss', meta_loss
+            info.setdefault(mode, {})
+            info[mode].setdefault('loss', [])
+            info[mode]['loss'].append(meta_loss)
+            info[mode].setdefault('accuracy', [])
+            info[mode]['accuracy'].append(meta_accuracy)
+
+            print '\nMeta-{} loss'.format(mode)
+            print 'metaloss', meta_loss
+            print 'accuracy', meta_accuracy
+            print 'average metaloss', np.mean(info[mode]['loss'])
+            print 'average accuracy', np.mean(info[mode]['accuracy'])
+

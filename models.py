@@ -49,6 +49,10 @@ class OmniglotModel(nn.Module):
         out = self.classifier(out)
         return out
 
+    def predict(self, prob):
+        __, argmax = prob.max(1)
+        return argmax
+
     def clone(self):
         clone = OmniglotModel(self.num_classes)
         clone.load_state_dict(self.state_dict())
