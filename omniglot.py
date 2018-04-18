@@ -3,6 +3,7 @@ import os
 import numpy as np
 from PIL import Image
 from torchvision.datasets.utils import list_dir, list_files
+from torchvision import transforms
 
 # Might need to manually download, extract, and merge
 # https://github.com/brendenlake/omniglot/blob/master/python/images_background.zip
@@ -47,15 +48,23 @@ class FewShot(data.Dataset):
             image = read_image(path, self.parent.size)
         else:
             image = self.parent.cache.read_image(path, self.parent.size)
-        return image, self.paths[idx]
+        if self.parent.transform_image is not None:
+            image = self.parent.transform_image(image)
+        label = self.paths[idx]
+        if self.parent.transform_label is not None:
+            label = self.parent.transform_label(label)
+        return image, label
 
 
 class AbstractMetaOmniglot(object):
 
-    def __init__(self, characters_list, cache=None, size=(28, 28)):
+    def __init__(self, characters_list, cache=None, size=(28, 28),
+                 transform_image=None, transform_label=None):
         self.characters_list = characters_list
         self.cache = cache
         self.size = size
+        self.transform_image = transform_image
+        self.transform_label = transform_label
 
     def __len__(self):
         return len(self.characters_list)
@@ -94,7 +103,7 @@ class AbstractMetaOmniglot(object):
 
 class MetaOmniglotFolder(AbstractMetaOmniglot):
 
-    def __init__(self, root='omniglot', cache=None, size=(28, 28)):
+    def __init__(self, root='omniglot', *args, **kwargs):
         '''
         :param root: folder containing alphabets for background and evaluation set
         '''
@@ -112,7 +121,7 @@ class MetaOmniglotFolder(AbstractMetaOmniglot):
                         'character_idx': character_idx
                     })
         characters_list = np.asarray(self._characters.items())
-        AbstractMetaOmniglot.__init__(self, characters_list, cache, size)
+        AbstractMetaOmniglot.__init__(self, characters_list, *args, **kwargs)
 
 
 class MetaOmniglotSplit(AbstractMetaOmniglot):
@@ -129,13 +138,27 @@ def split_omniglot(meta_omniglot, validation=0.1):
     np.random.shuffle(indices)
     train_characters = meta_omniglot[indices[:-n_val]]
     test_characters = meta_omniglot[indices[-n_val:]]
-    train = MetaOmniglotSplit(train_characters, cache=meta_omniglot.cache, size=meta_omniglot.size)
-    test = MetaOmniglotSplit(test_characters, cache=meta_omniglot.cache, size=meta_omniglot.size)
+    train = MetaOmniglotSplit(train_characters, cache=meta_omniglot.cache, size=meta_omniglot.size,
+                              transform_image=meta_omniglot.transform_image, transform_label=meta_omniglot.transform_label)
+    test = MetaOmniglotSplit(test_characters, cache=meta_omniglot.cache, size=meta_omniglot.size,
+                             transform_image=meta_omniglot.transform_image, transform_label=meta_omniglot.transform_label)
     return train, test
 
 
+# Default transforms
+transform_image = transforms.Compose([
+    transforms.ToTensor()
+])
+
+def transform_label(paths):
+    return paths['base_idx']
+
+
 if __name__ == '__main__':
-    meta_omniglot = MetaOmniglotFolder('omniglot', size=(64, 64), cache=ImageCache())
+    meta_omniglot = MetaOmniglotFolder('omniglot',
+                                       size=(64, 64),
+                                       cache=ImageCache(),
+                                       transform_image=transform_image)
 
     train, test = split_omniglot(meta_omniglot)
     print 'all', len(meta_omniglot)

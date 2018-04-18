@@ -4,10 +4,11 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 from torch.utils.data import DataLoader
+from torchvision import transforms
 import numpy as np
 
 from models import OmniglotModel
-from omniglot import MetaOmniglotFolder, split_omniglot, ImageCache
+from omniglot import MetaOmniglotFolder, split_omniglot, ImageCache, transform_image, transform_label
 
 
 def make_infinite(dataloader):
@@ -43,14 +44,17 @@ parser.add_argument('--base-batch', default=8, type=int, help='minibatch size in
 
 # - General params
 parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
-parser.add_argument('--validate-every', 10, type=int, help='Meta-evaluation every ... base-tasks')
+parser.add_argument('--validate-every', default=10, type=int, help='Meta-evaluation every ... base-tasks')
 parser.add_argument('--input', default='omniglot', help='Path to omniglot dataset')
 parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
 args = parser.parse_args()
 
 # Load data
-omniglot = MetaOmniglotFolder(args.input, size=(28, 28), cache=ImageCache())
+# Resize is done by the MetaDataset because the result can be easily cached
+omniglot = MetaOmniglotFolder(args.input, size=(28, 28), cache=ImageCache(),
+                              transform_image=transform_image,
+                              transform_label=transform_label)
 train_dataset, test_dataset = split_omniglot(omniglot, args.validation)
 
 
@@ -72,9 +76,7 @@ def do_base_learning(base_net, base_optimizer, base_iter, base_iterations):
 
     for base_iteration in xrange(base_iterations):
         # Sample minibatch
-        data, meta = base_iter.next()
-        data = Variable_(data)
-        labels = Variable_(labels['base_idx'])
+        data, labels = Variable_(base_iter.next())
 
         # Forward pass
         prediction = base_net(data)
@@ -95,9 +97,7 @@ def do_base_evaluation(base_net, base_iter, base_iterations):
     losses = []
     for base_iteration in xrange(base_iterations):
         # Sample minibatch
-        data, meta = base_iter.next()
-        data = Variable_(data)
-        labels = Variable_(labels['base_idx'])
+        data, labels = Variable_(base_iter.next())
 
         # Forward pass
         prediction = base_net(data)
