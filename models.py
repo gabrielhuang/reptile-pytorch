@@ -54,14 +54,15 @@ class OmniglotModel(nn.Module):
         clone.load_state_dict(self.state_dict())
         return clone
 
-    def point_grad_to(self, target, cuda=True):
+    def point_grad_to(self, target):
         '''
         Set .grad attribute of each parameter to be proportional
         to the difference between self and target
         '''
+        is_cuda = next(self.parameters()).is_cuda
         for p, target_p in zip(self.parameters(), target.parameters()):
             if p.grad is None:
-                if cuda:
+                if is_cuda:
                     p.grad = Variable(torch.zeros(p.size())).cuda()
                 else:
                     p.grad = Variable(torch.zeros(p.size()))
