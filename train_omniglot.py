@@ -42,7 +42,7 @@ parser.add_argument('--meta-iterations', default=400000, type=int, help='number 
 parser.add_argument('--iterations', default=3, type=int, help='number of base iterations')
 parser.add_argument('--batch', default=8, type=int, help='minibatch size in base task')
 parser.add_argument('--meta-lr', default=1e-3, type=float, help='meta learning rate')
-parser.add_argument('--lr', default=1e-2, type=float, help='base learning rate')
+parser.add_argument('--lr', default=1e-1, type=float, help='base learning rate')
 
 # - General params
 parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
@@ -152,6 +152,7 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
             # Base-train
             net = meta_net.clone()
+            optimizer = torch.optim.SGD(net.parameters(), lr=args.lr)
             loss = do_learning(net, optimizer, train_iter, args.iterations)
 
             # Base-test: compute meta-loss, which is base-validation error
