@@ -1,3 +1,4 @@
+import os
 import argparse
 from tqdm import tqdm
 import torch
@@ -6,6 +7,8 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import numpy as np
+from tensorboardX import SummaryWriter
+
 
 from models import OmniglotModel
 from omniglot import MetaOmniglotFolder, split_omniglot, ImageCache, transform_image, transform_label
@@ -52,9 +55,16 @@ parser.add_argument('--validate-every', default=100, type=int, help='Meta-evalua
 parser.add_argument('--input', default='omniglot', help='Path to omniglot dataset')
 parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
+parser.add_argument('--logdir', required=True, help='Folder to store everything')
 args = parser.parse_args()
 if args.train_shots <= 0:
     args.train_shots = args.shots
+if os.path.exists(args.logdir):
+    os.path.makedirs(args.logdir)
+run_dir = args.logdir
+if os.path.exists(run_dir):
+    os.path.makedirs(run_dir)
+logger = SummaryWriter(run_dir)
 
 # Load data
 # Resize is done by the MetaDataset because the result can be easily cached
@@ -157,7 +167,7 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
     # Meta-Evaluation
     if meta_iteration % args.validate_every == 0:
-        for (meta_dataset, mode) in [(meta_train, 'train'), (meta_test, 'test')]:
+        for (meta_dataset, mode) in [(meta_train, 'train'), (meta_test, 'val')]:
 
             train, test = meta_dataset.get_random_task_split(args.classes, train_K=args.shots, test_K=5)  # is that 5 ok?
             train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True))
@@ -182,4 +192,7 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
             print 'accuracy', meta_accuracy
             print 'average metaloss', np.mean(info[mode]['loss'])
             print 'average accuracy', np.mean(info[mode]['accuracy'])
+
+            logger.add_scalar('{}_accuracy'.format(mode), meta_accuracy, meta_iteration)
+            logger.add_scalar('{}_loss'.format(mode), meta_loss, meta_iteration)
 
