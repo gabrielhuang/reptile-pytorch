@@ -1,6 +1,8 @@
 import os
 import argparse
-from tqdm import tqdm
+import tqdm
+import json
+import re
 import torch
 from torch import nn
 from torch.autograd import Variable
@@ -12,6 +14,7 @@ from typing import Any, Union
 
 from models import OmniglotModel
 from omniglot import MetaOmniglotFolder, split_omniglot, ImageCache, transform_image, transform_label
+from utils import find_latest_file
 
 
 def make_infinite(dataloader):
@@ -38,6 +41,9 @@ def Variable_(tensor, *args_, **kwargs):
 # Parsing
 parser = argparse.ArgumentParser('Train reptile on omniglot')
 
+# Mode
+parser.add_argument('logdir', help='Folder to store everything/load')
+
 # - Training params
 parser.add_argument('--classes', default=5, type=int, help='classes in base-task (N-way)')
 parser.add_argument('--shots', default=5, type=int, help='shots per class (K-shot)')
@@ -56,23 +62,42 @@ parser.add_argument('--validate-every', default=100, type=int, help='Meta-evalua
 parser.add_argument('--input', default='omniglot', help='Path to omniglot dataset')
 parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
-parser.add_argument('--logdir', required=True, help='Folder to store everything')
 parser.add_argument('--check-every', default=1000, help='Checkpoint every')
-parser.add_argument('--resume', default='log/checkpoint/check-1000.pth', help='Path to checkpoint')
-#parser.add_argument('--resume', default='', help='Path to checkpoint')
-args = parser.parse_args()
-if args.train_shots <= 0:
-    args.train_shots = args.shots
+#parser.add_argument('--checkpoint', default='log2/checkpoint/check-3000.pth', help='Path to checkpoint')
+parser.add_argument('--checkpoint', default='', help='Path to checkpoint')
+#parser.add_argument('--reset', type=int, default=0, help='Path to checkpoint')
 
-# Create directories if they don't exist
-if not os.path.exists(args.logdir):
-    os.makedirs(args.logdir)
+# Do some processing
+args = parser.parse_args()
+print args
+args_filename = os.path.join(args.logdir, 'args.json')
 run_dir = args.logdir
-if not os.path.exists(run_dir):
-    os.makedirs(run_dir)
 check_dir = os.path.join(run_dir, 'checkpoint')
-if not os.path.exists(check_dir):
-    os.makedirs(check_dir)
+
+# By default, continue training
+# Check if args.json exists
+if os.path.exists(args_filename):
+    print 'Attempting to resume training. (Delete {} to start over)'.format(args.logdir)
+    # Find latest model if possible
+    assert args.checkpoint == '', 'Cannot load other checkpoint when resuming training.'
+    # Find last model
+    latest_checkpoint = find_latest_file(check_dir)
+    if latest_checkpoint:
+        print 'Latest checkpoint found:', latest_checkpoint
+        args.checkpoint = os.path.join(check_dir, latest_checkpoint)
+    else:
+        print 'No checkpoint found, will initialize model.'
+else:
+    print 'No previous training found. Starting fresh.'
+    # Otherwise, initialize folders
+    if not os.path.exists(run_dir):
+        os.makedirs(run_dir)
+    if not os.path.exists(check_dir):
+        os.makedirs(check_dir)
+    # Write args to args.json
+    with open(args_filename, 'wb') as fp:
+        json.dump(vars(args), fp, indent=4)
+
 
 # Create tensorboard logger
 logger = SummaryWriter(run_dir)
@@ -161,10 +186,10 @@ info = {}
 state = None
 
 
-if args.resume:
-    print 'Attempting to load checkpoint', args.resume
-    assert os.path.isfile(args.resume)
-    checkpoint = torch.load(args.resume)
+if args.checkpoint:
+    print 'Attempting to load checkpoint', args.checkpoint
+    assert os.path.isfile(args.checkpoint), 'Bad checkpoint. Delete logdir folder to start over.'
+    checkpoint = torch.load(args.checkpoint)
     meta_net.load_state_dict(checkpoint['meta_net'])
     meta_optimizer.load_state_dict(checkpoint['meta_optimizer'])
     state = checkpoint['optimizer']
@@ -173,10 +198,10 @@ if args.resume:
 
 
 # Main loop
-for meta_iteration in tqdm(xrange(args.start_meta_iteration, args.meta_iterations)):
+for meta_iteration in tqdm.trange(args.start_meta_iteration, args.meta_iterations):
 
     # Update learning rate
-    meta_lr = args.meta_lr * (1. - meta_iteration/args.meta_iterations)
+    meta_lr = args.meta_lr * (1. - meta_iteration/float(args.meta_iterations))
     set_learning_rate(meta_optimizer, meta_lr)
 
     # Clone model
@@ -185,7 +210,7 @@ for meta_iteration in tqdm(xrange(args.start_meta_iteration, args.meta_iteration
     # load state of base optimizer?
 
     # Sample base task from Meta-Train
-    train = meta_train.get_random_task(args.classes, args.train_shots)
+    train = meta_train.get_random_task(args.classes, args.train_shots or args.shots)
     train_iter = make_infinite(DataLoader(train, args.batch, shuffle=True))
 
     # Update fast net
@@ -198,6 +223,9 @@ for meta_iteration in tqdm(xrange(args.start_meta_iteration, args.meta_iteration
 
     # Meta-Evaluation
     if meta_iteration % args.validate_every == 0:
+        print '\n\nMeta-iteration', meta_iteration
+        print '(started at {})'.format(args.start_meta_iteration)
+
         for (meta_dataset, mode) in [(meta_train, 'train'), (meta_test, 'val')]:
 
             train, test = meta_dataset.get_random_task_split(args.classes, train_K=args.shots, test_K=5)  # is that 5 ok?
@@ -222,16 +250,14 @@ for meta_iteration in tqdm(xrange(args.start_meta_iteration, args.meta_iteration
             info[loss_][meta_iteration] = meta_loss
             info[accuracy_][meta_iteration] = meta_accuracy
             info[meta_lr_][meta_iteration] = meta_lr
-
             print '\nMeta-{}'.format(mode)
             print 'average metaloss', np.mean(info[loss_].values())
             print 'average accuracy', np.mean(info[accuracy_].values())
-
             logger.add_scalar(loss_, meta_loss, meta_iteration)
             logger.add_scalar(accuracy_, meta_accuracy, meta_iteration)
             logger.add_scalar(meta_lr_, meta_lr, meta_iteration)
 
-    if meta_iteration % args.check_every == 0 and not (args.resume and meta_iteration==args.start_meta_iteration):
+    if meta_iteration % args.check_every == 0 and not (args.checkpoint and meta_iteration == args.start_meta_iteration):
         # Make a checkpoint
         checkpoint = {
             'meta_net': meta_net.state_dict(),
