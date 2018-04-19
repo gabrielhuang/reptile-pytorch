@@ -58,8 +58,8 @@ parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
 parser.add_argument('--logdir', required=True, help='Folder to store everything')
 parser.add_argument('--check-every', default=1000, help='Checkpoint every')
-#parser.add_argument('--resume', default='log/checkpoint/check-1000.pth', help='Path to checkpoint')
-parser.add_argument('--resume', default='', help='Path to checkpoint')
+parser.add_argument('--resume', default='log/checkpoint/check-1000.pth', help='Path to checkpoint')
+#parser.add_argument('--resume', default='', help='Path to checkpoint')
 args = parser.parse_args()
 if args.train_shots <= 0:
     args.train_shots = args.shots
@@ -231,7 +231,7 @@ for meta_iteration in tqdm(xrange(args.start_meta_iteration, args.meta_iteration
             logger.add_scalar(accuracy_, meta_accuracy, meta_iteration)
             logger.add_scalar(meta_lr_, meta_lr, meta_iteration)
 
-    if meta_iteration % args.check_every == 0:
+    if meta_iteration % args.check_every == 0 and not (args.resume and meta_iteration==args.start_meta_iteration):
         # Make a checkpoint
         checkpoint = {
             'meta_net': meta_net.state_dict(),
