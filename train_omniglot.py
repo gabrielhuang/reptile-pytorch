@@ -63,9 +63,7 @@ parser.add_argument('--input', default='omniglot', help='Path to omniglot datase
 parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
 parser.add_argument('--check-every', default=1000, help='Checkpoint every')
-#parser.add_argument('--checkpoint', default='log2/checkpoint/check-3000.pth', help='Path to checkpoint')
 parser.add_argument('--checkpoint', default='', help='Path to checkpoint')
-#parser.add_argument('--reset', type=int, default=0, help='Path to checkpoint')
 
 # Do some processing
 args = parser.parse_args()
