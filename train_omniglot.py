@@ -10,7 +10,6 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import numpy as np
 from tensorboardX import SummaryWriter
-from typing import Any, Union
 
 from models import OmniglotModel
 from omniglot import MetaOmniglotFolder, split_omniglot, ImageCache, transform_image, transform_label
