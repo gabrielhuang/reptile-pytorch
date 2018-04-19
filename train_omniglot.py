@@ -75,15 +75,11 @@ check_dir = os.path.join(run_dir, 'checkpoint')
 # Check if args.json exists
 if os.path.exists(args_filename):
     print 'Attempting to resume training. (Delete {} to start over)'.format(args.logdir)
-    # Find latest model if possible
+    # Resuming training is incompatible with other checkpoint
+    # than the last one in logdir
     assert args.checkpoint == '', 'Cannot load other checkpoint when resuming training.'
-    # Find last model
-    latest_checkpoint = find_latest_file(check_dir)
-    if latest_checkpoint:
-        print 'Latest checkpoint found:', latest_checkpoint
-        args.checkpoint = os.path.join(check_dir, latest_checkpoint)
-    else:
-        print 'No checkpoint found, will initialize model.'
+    # Attempt to find checkpoint in logdir
+    args.checkpoint = args.logdir
 else:
     print 'No previous training found. Starting fresh.'
     # Otherwise, initialize folders
@@ -183,16 +179,30 @@ info = {}
 state = None
 
 
-if args.checkpoint:
+# checkpoint is directory -> Find last model or '' if does not exist
+if os.path.isdir(args.checkpoint):
+    latest_checkpoint = find_latest_file(check_dir)
+    if latest_checkpoint:
+        print 'Latest checkpoint found:', latest_checkpoint
+        args.checkpoint = os.path.join(check_dir, latest_checkpoint)
+    else:
+        args.checkpoint = ''
+
+# Start fresh
+if args.checkpoint == '':
+    print 'No checkpoint. Starting fresh'
+
+# Load file
+elif os.path.isfile(args.checkpoint):
     print 'Attempting to load checkpoint', args.checkpoint
-    assert os.path.isfile(args.checkpoint), 'Bad checkpoint. Delete logdir folder to start over.'
     checkpoint = torch.load(args.checkpoint)
     meta_net.load_state_dict(checkpoint['meta_net'])
     meta_optimizer.load_state_dict(checkpoint['meta_optimizer'])
     state = checkpoint['optimizer']
     args.start_meta_iteration = checkpoint['meta_iteration']
     info = checkpoint['info']
-
+else:
+    raise ArgumentError('Bad checkpoint. Delete logdir folder to start over.')
 
 # Main loop
 for meta_iteration in tqdm.trange(args.start_meta_iteration, args.meta_iterations):
@@ -222,6 +232,7 @@ for meta_iteration in tqdm.trange(args.start_meta_iteration, args.meta_iteration
     if meta_iteration % args.validate_every == 0:
         print '\n\nMeta-iteration', meta_iteration
         print '(started at {})'.format(args.start_meta_iteration)
+        print 'Meta LR', meta_lr
 
         for (meta_dataset, mode) in [(meta_train, 'train'), (meta_test, 'val')]:
 
