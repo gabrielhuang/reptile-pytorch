@@ -8,7 +8,7 @@ from torch.utils.data import DataLoader
 from torchvision import transforms
 import numpy as np
 from tensorboardX import SummaryWriter
-
+from typing import Any, Union
 
 from models import OmniglotModel
 from omniglot import MetaOmniglotFolder, split_omniglot, ImageCache, transform_image, transform_label
@@ -40,13 +40,14 @@ parser = argparse.ArgumentParser('Train reptile on omniglot')
 
 # - Training params
 parser.add_argument('--classes', default=5, type=int, help='classes in base-task (N-way)')
-parser.add_argument('--shots', default=1, type=int, help='shots per class (K-shot)')
-parser.add_argument('--train-shots', default=15, type=int, help='train shots')
+parser.add_argument('--shots', default=5, type=int, help='shots per class (K-shot)')
+parser.add_argument('--train-shots', default=10, type=int, help='train shots')
 parser.add_argument('--meta-iterations', default=100000, type=int, help='number of meta iterations')
-parser.add_argument('--iterations', default=3, type=int, help='number of base iterations')
-parser.add_argument('--test-iterations', default=5, type=int, help='number of base iterations')
-parser.add_argument('--batch', default=5, type=int, help='minibatch size in base task')
-parser.add_argument('--meta-lr', default=0.8, type=float, help='meta learning rate')
+parser.add_argument('--start-meta-iteration', default=0, type=int, help='start iteration')
+parser.add_argument('--iterations', default=5, type=int, help='number of base iterations')
+parser.add_argument('--test-iterations', default=50, type=int, help='number of base iterations')
+parser.add_argument('--batch', default=10, type=int, help='minibatch size in base task')
+parser.add_argument('--meta-lr', default=1., type=float, help='meta learning rate')
 parser.add_argument('--lr', default=1e-3, type=float, help='base learning rate')
 
 # - General params
@@ -56,14 +57,23 @@ parser.add_argument('--input', default='omniglot', help='Path to omniglot datase
 parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
 parser.add_argument('--logdir', required=True, help='Folder to store everything')
+parser.add_argument('--check-every', default=1000, help='Checkpoint every')
+parser.add_argument('--resume', default='', help='Path to checkpoint')
 args = parser.parse_args()
 if args.train_shots <= 0:
     args.train_shots = args.shots
-if os.path.exists(args.logdir):
-    os.path.makedirs(args.logdir)
+
+# Create directories if they don't exist
+if not os.path.exists(args.logdir):
+    os.makedirs(args.logdir)
 run_dir = args.logdir
-if os.path.exists(run_dir):
-    os.path.makedirs(run_dir)
+if not os.path.exists(run_dir):
+    os.makedirs(run_dir)
+check_dir = os.path.join(run_dir, 'checkpoint')
+if not os.path.exists(check_dir):
+    os.makedirs(check_dir)
+
+# Create tensorboard logger
 logger = SummaryWriter(run_dir)
 
 # Load data
@@ -73,14 +83,9 @@ omniglot = MetaOmniglotFolder(args.input, size=(28, 28), cache=ImageCache(),
                               transform_label=transform_label)
 meta_train, meta_test = split_omniglot(omniglot, args.validation)
 
-
 print 'Meta-Train characters', len(meta_train)
 print 'Meta-Test characters', len(meta_test)
 
-# Load model
-meta_net = OmniglotModel(args.classes)
-if args.cuda:
-    meta_net.cuda()
 
 # Loss
 cross_entropy = nn.CrossEntropyLoss()
@@ -141,12 +146,37 @@ def get_optimizer(net, state=None):
     return optimizer
 
 
-# Main loop
+def set_learning_rate(optimizer, lr):
+    for param_group in optimizer.param_groups:
+        param_group['lr'] = lr
+
+
+# Build model, optimizer, and set states
+meta_net = OmniglotModel(args.classes)
+if args.cuda:
+    meta_net.cuda()
 meta_optimizer = torch.optim.SGD(meta_net.parameters(), lr=args.meta_lr)
-#meta_optimizer = torch.optim.Adam(meta_net.parameters(), lr=args.meta_lr)
 info = {}
 state = None
-for meta_iteration in tqdm(xrange(args.meta_iterations)):
+
+
+if args.resume:
+    print 'Attempting to load checkpoint', args.resume
+    assert os.path.isfile(args.resume)
+    checkpoint = torch.load(args.resume)
+    meta_net.load_state_dict(checkpoint['meta_net'])
+    meta_optimizer.load_state_dict(checkpoint['meta_optimizer'])
+    state = checkpoint['optimizer']
+    args.start_meta_iteration = checkpoint['meta_iteration']
+    info = checkpoint['info']
+
+
+# Main loop
+for meta_iteration in tqdm(xrange(args.start_meta_iteration, args.meta_iterations)):
+
+    # Update learning rate
+    meta_lr = args.meta_lr * (1. - meta_iteration/args.meta_iterations)
+    set_learning_rate(meta_optimizer, meta_lr)
 
     # Clone model
     net = meta_net.clone()
@@ -175,24 +205,40 @@ for meta_iteration in tqdm(xrange(args.meta_iterations)):
 
             # Base-train
             net = meta_net.clone()
-            optimizer = get_optimizer(net, state)
+            optimizer = get_optimizer(net, state)  # do not save state of optimizer
             loss = do_learning(net, optimizer, train_iter, args.test_iterations)
 
             # Base-test: compute meta-loss, which is base-validation error
             meta_loss, meta_accuracy = do_evaluation(net, test_iter, 1)  # only one iteration for eval
 
-            info.setdefault(mode, {})
-            info[mode].setdefault('loss', [])
-            info[mode]['loss'].append(meta_loss)
-            info[mode].setdefault('accuracy', [])
-            info[mode]['accuracy'].append(meta_accuracy)
+            # (Logging)
+            loss_ = '{}_loss'.format(mode)
+            accuracy_ = '{}_accuracy'.format(mode)
+            meta_lr_ = 'meta_lr'
+            info.setdefault(loss_, {})
+            info.setdefault(accuracy_, {})
+            info.setdefault(meta_lr_, {})
+            info[loss_][meta_iteration] = meta_loss
+            info[accuracy_][meta_iteration] = meta_accuracy
+            info[meta_lr_][meta_iteration] = meta_lr
 
-            print '\nMeta-{} loss'.format(mode)
-            print 'metaloss', meta_loss
-            print 'accuracy', meta_accuracy
-            print 'average metaloss', np.mean(info[mode]['loss'])
-            print 'average accuracy', np.mean(info[mode]['accuracy'])
+            print '\nMeta-{}'.format(mode)
+            print 'average metaloss', np.mean(info[loss_].values())
+            print 'average accuracy', np.mean(info[accuracy_].values())
 
-            logger.add_scalar('{}_accuracy'.format(mode), meta_accuracy, meta_iteration)
-            logger.add_scalar('{}_loss'.format(mode), meta_loss, meta_iteration)
+            logger.add_scalar(loss_, meta_loss, meta_iteration)
+            logger.add_scalar(accuracy_, meta_accuracy, meta_iteration)
+            logger.add_scalar(meta_lr_, meta_lr, meta_iteration)
 
+    if meta_iteration % args.check_every == 0:
+        # Make a checkpoint
+        checkpoint = {
+            'meta_net': meta_net,
+            'meta_optimizer': meta_optimizer.state_dict(),
+            'optimizer': state,
+            'meta_iteration': meta_iteration,
+            'info': info
+        }
+        checkpoint_path = os.path.join(check_dir, 'check-{}.pth'.format(meta_iteration))
+        torch.save(checkpoint, checkpoint_path)
+        print 'Saved checkpoint to', checkpoint_path
