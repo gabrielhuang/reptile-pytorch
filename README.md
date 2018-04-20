@@ -71,7 +71,7 @@ python train_omniglot.py log/o55 --classes 5 --shots 5 --train-shots 10 --meta-i
 For 5-way 1-shot:
 
 ```bash
-python train_omniglot.py log/o51 --classes 5 --shots 1 --train-shots 12 --meta-iterations 100000 --iterations 12 --test-iterations 86 --batch 10 --meta-lr 0.33 --lr 0.00044
+python train_omniglot.py log/o51 --classes 5 --shots 1 --train-shots 12 --meta-iterations 200000 --iterations 12 --test-iterations 86 --batch 10 --meta-lr 0.33 --lr 0.00044
 ```
 
 
