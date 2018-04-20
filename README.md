@@ -56,6 +56,25 @@ Behavior:
 
 Training can be interrupted at any time with `^C`, and resumed from the last checkpoint by re-running the same command.
 
+## Omniglot Hyperparameters
+
+The following set of hyperparameters work decently. 
+They are taken from the OpenAI implementation but are adapted slightly
+for `meta-batch=1`.
+
+For 5-way 5-shot:
+
+```bash
+python train_omniglot.py log/o55 --classes 5 --shots 5 --train-shots 10 --meta-iterations 100000 --iterations 5 --test-iterations 50 --batch 10 --meta-lr 0.2 --lr 0.001
+```
+
+For 5-way 1-shot:
+
+```bash
+python train_omniglot.py log/o51 --classes 5 --shots 1 --train-shots 12 --meta-iterations 100000 --iterations 12 --test-iterations 86 --batch 10 --meta-lr 0.33 --lr 0.00044
+```
+
+
 ## References
 
 - [Original Paper](https://arxiv.org/abs/1803.02999): Alex Nichol, Joshua Achiam, John Schulman. "On First-Order Meta-Learning Algorithms".
