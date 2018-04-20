@@ -62,17 +62,22 @@ The following set of hyperparameters work decently.
 They are taken from the OpenAI implementation but are adapted slightly
 for `meta-batch=1`.
 
-For 5-way 5-shot:
+<img src="https://github.com/gabrielhuang/reptile-pytorch/raw/master/plots/omniglot_train.png" width="400">
+<img src="https://github.com/gabrielhuang/reptile-pytorch/raw/master/plots/omniglot_val.png" width="400">
+
+For 5-way 5-shot (red curve):
 
 ```bash
 python train_omniglot.py log/o55 --classes 5 --shots 5 --train-shots 10 --meta-iterations 100000 --iterations 5 --test-iterations 50 --batch 10 --meta-lr 0.2 --lr 0.001
 ```
 
-For 5-way 1-shot:
+For 5-way 1-shot (blue curve):
 
 ```bash
 python train_omniglot.py log/o51 --classes 5 --shots 1 --train-shots 12 --meta-iterations 200000 --iterations 12 --test-iterations 86 --batch 10 --meta-lr 0.33 --lr 0.00044
 ```
+
+
 
 
 ## References
