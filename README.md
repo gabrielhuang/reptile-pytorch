@@ -4,6 +4,8 @@ My PyTorch implementation of OpenAI's Reptile algorithm for supervised learning.
 
 Currently, it runs on Omniglot but not yet on MiniImagenet.
 
+I have not tested the code extensively. Contributions and feedback are more than welcome!
+
 ## Omniglot meta-learning dataset
 
 I know there is already an Omniglot dataset class in torchvision, however it seems to be more adapted for supervised-learning
