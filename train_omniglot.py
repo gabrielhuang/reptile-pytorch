@@ -59,10 +59,9 @@ parser.add_argument('--lr', default=1e-3, type=float, help='base learning rate')
 parser.add_argument('--validation', default=0.1, type=float, help='Percentage of validation')
 parser.add_argument('--validate-every', default=100, type=int, help='Meta-evaluation every ... base-tasks')
 parser.add_argument('--input', default='omniglot', help='Path to omniglot dataset')
-parser.add_argument('--output', help='Where to save models')
 parser.add_argument('--cuda', default=1, type=int, help='Use cuda')
 parser.add_argument('--check-every', default=1000, help='Checkpoint every')
-parser.add_argument('--checkpoint', default='', help='Path to checkpoint')
+parser.add_argument('--checkpoint', default='', help='Path to checkpoint. This works only if starting fresh (i.e., no checkpoints in logdir)')
 
 # Do some processing
 args = parser.parse_args()
