@@ -106,7 +106,7 @@ print 'Meta-Test characters', len(meta_test)
 
 
 # Loss
-cross_entropy = nn.CrossEntropyLoss()
+cross_entropy = nn.NLLLoss()
 def get_loss(prediction, labels):
     return cross_entropy(prediction, labels)
 
