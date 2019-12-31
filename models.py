@@ -88,6 +88,6 @@ if __name__ == '__main__':
     model = OmniglotModel(20)
     x = Variable(torch.zeros(5, 28*28))
     y = model(x)
-    print 'x', x.size()
-    print 'y', y.size()
+    print('x', x.size())
+    print('y', y.size())
 
