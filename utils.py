@@ -12,10 +12,7 @@ def list_dir(root, prefix=False):
     """
     root = os.path.expanduser(root)
     directories = list(
-        filter(
-            lambda p: os.path.isdir(os.path.join(root, p)),
-            os.listdir(root)
-        )
+        [p for p in os.listdir(root) if os.path.isdir(os.path.join(root, p))]
     )
 
     if prefix is True:
@@ -35,10 +32,7 @@ def list_files(root, suffix, prefix=False):
     """
     root = os.path.expanduser(root)
     files = list(
-        filter(
-            lambda p: os.path.isfile(os.path.join(root, p)) and p.endswith(suffix),
-            os.listdir(root)
-        )
+        [p for p in os.listdir(root) if os.path.isfile(os.path.join(root, p)) and p.endswith(suffix)]
     )
 
     if prefix is True:
